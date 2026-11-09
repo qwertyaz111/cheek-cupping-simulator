@@ -1,0 +1,1475 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🫪ほっぺ包みシミュレーター</title>
+    <style>
+        :root { --panel-width: 300px; }
+        body { margin: 0; font-family: 'Helvetica Neue', Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; background: #ffffff; overflow: hidden; }
+        /* #ui-panel の更新 */
+        #ui-panel {
+            position: absolute; 
+            top: 10px; 
+            left: 10px; 
+            width: var(--panel-width);
+            max-height: calc(100vh - 20px);
+            max-height: calc(100dvh - 20px); /* 可変ビューポート対応 */
+            background: rgba(255, 255, 255, 0.95); 
+            padding: 15px; 
+            padding-bottom: 40px; 
+            border-radius: 15px; 
+            z-index: 100; 
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            overflow-y: auto; 
+            -webkit-overflow-scrolling: touch; 
+            touch-action: pan-y; 
+            border: 1px solid rgba(255,255,255,0.3); 
+            backdrop-filter: blur(10px); 
+            -webkit-backdrop-filter: blur(10px);
+            box-sizing: border-box;
+            transition: all 0.2s ease-out;
+        }
+        #canvas-container { width: 100vw; height: 100vh; cursor: move; touch-action: none; }
+
+        @media screen and (max-width: 480px) { 
+            :root { --panel-width: calc(100vw - 20px); }
+            #ui-panel { left: 10px; right: 10px; }
+        }
+        
+        @media screen and (orientation: landscape) and (max-height: 500px) {
+            :root { --panel-width: 260px; }
+            #ui-panel { top: 5px; left: 5px; padding: 10px; max-height: calc(100vh - 10px); }
+            .app-title { font-size: 1.1rem; }
+            .input-group { padding: 8px; margin-bottom: 5px; }
+        }
+
+        /* 折りたたんだ（閉じた）時の専用スタイル */
+        #ui-panel.collapsed {
+            max-height: none !important;
+            padding: 10px 15px !important;
+            overflow: hidden !important;
+            width: auto;
+            max-width: calc(100vw - 20px);
+        }
+
+        @media screen and (max-width: 480px) { 
+            /* スマホ表示で閉じた場合、右端の固定を解除してタイトルサイズへ収める */
+            #ui-panel.collapsed { right: auto; }
+        }
+
+        /* ヘッダーをパネル上部に固定（スクロールしても上に張り付く） */
+        .panel-header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            cursor: pointer; 
+            user-select: none; 
+            gap: 10px; 
+            position: sticky; /* パネル内スクロール時も上に固定 */
+            top: -15px;       /* padding 分を相殺 */
+            background: rgba(255, 255, 255, 0.95);
+            padding: 10px 0;
+            margin: -15px -15px 10px -15px;
+            padding-left: 15px;
+            padding-right: 15px;
+            z-index: 10;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+        }
+        #toggle-text { 
+            font-size: 12px; 
+            font-weight: bold; 
+            color: #666; 
+            background: #eee; 
+            padding: 4px 10px; 
+            border-radius: 10px; 
+            white-space: nowrap; /* テキストの意図しない改行を防止 */
+        }
+        .collapsed #ui-content { display: none; }
+
+        .app-title { 
+            font-size: 1.2rem; 
+            margin: 0; 
+            color: #333; 
+            font-weight: bold; 
+            white-space: nowrap; /* タイトルの改行を防止 */
+        }
+        .app-description { font-size: 11px; color: #777; margin-top: 8px; margin-bottom: 5px; line-height: 1.5; text-align: center; }
+        
+        .app-disclaimer { 
+            font-size: 9px; 
+            color: #aaa; 
+            margin-bottom: 12px; 
+            line-height: 1.4; 
+            text-align: left;
+            background: #f9f9f9;
+            padding: 8px;
+            border-radius: 8px;
+        }
+
+        .input-group { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; margin-bottom: 10px; }
+        .group-a { background: #fff5f0; border: 1px solid #ffe0d0; }
+        .group-b { background: #f0f7ff; border: 1px solid #d0e7ff; }
+        .section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+        .section-header strong { font-size: 15px; color: #444; }
+        .input-row { display: flex; gap: 8px; align-items: flex-end; width: 100%; }
+        .input-item { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+        .hint { font-size: 10px; color: #999; margin-bottom: 2px; font-weight: bold; }
+        input, select { padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; background: white; color: #333; width: 100%; box-sizing: border-box; }
+        
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] { -moz-appearance: textfield; }
+
+        .color-picker { width: 100%; height: 38px; border: 2px solid #999; border-radius: 4px; cursor: pointer; padding: 0; background: none; appearance: none; -webkit-appearance: none; }
+        
+        .switch-btn { width: 100%; padding: 12px; background: #333; color: white; border: none; border-radius: 25px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 14px; -webkit-tap-highlight-color: transparent; margin-bottom: 10px; }
+        .switch-btn:active { background: #000; transform: scale(0.98); }
+        .swap-btn { margin-bottom: 5px; }
+
+        .anim-controls {
+            display: flex;       
+            gap: 8px;            
+            margin-bottom: 10px;
+        }
+        .btn-anim {
+            flex: 1;             
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            background: #fff;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .btn-anim.active {
+            background: #333;
+            color: #fff;
+            border-color: #333;
+        }
+
+        .share-btn { 
+            width: 100%; padding: 12px; background: #000; color: white; border: none; border-radius: 10px; 
+            font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 13px; 
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            text-decoration: none; margin-top: 10px;
+        }
+        .share-btn:active { transform: scale(0.98); opacity: 0.8; }
+
+        .other-tools-link { margin-top: 20px; padding: 10px; background: #f9f9f9; border-radius: 10px; text-align: center; }
+        .other-tools-link a { text-decoration: none; color: #333; font-size: 12px; font-weight: bold; border: 2px solid #333; padding: 8px 15px; border-radius: 30px; display: inline-block; transition: 0.3s; margin: 4px; }
+        .other-tools-link a:hover { background: #333; color: #fff; }
+
+        .usage-notes { font-size: 10px; color: #999; margin-top: 12px; line-height: 1.5; text-align: center; }
+
+        .info-box { background: #ffffff; padding: 15px; border-radius: 12px; margin-top: 12px; border: 1px solid #eee; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); }
+        .info-row { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; }
+        .info-row:not(:last-child) { border-bottom: 1px dashed #eee; margin-bottom: 4px; }
+        .info-label { color: #555; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 4px; }
+        .info-value { font-weight: 800; font-size: 18px; color: #2c3e50; font-variant-numeric: tabular-nums; }
+        .unit { font-size: 11px; margin-left: 3px; color: #7f8c8d; font-weight: normal; }
+        
+        #view-label { 
+            position: absolute; 
+            bottom: 20px; 
+            right: 15px; 
+            background: rgba(0,0,0,0.7); 
+            color: white; 
+            padding: 8px 16px; 
+            border-radius: 20px; 
+            font-size: 12px; 
+            font-weight: bold; 
+            z-index: 90; 
+            pointer-events: none; 
+        }
+        .crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid rgba(0,0,0,0.15); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+            .radio-switch { display: flex; gap: 4px; background: #eee; padding: 3px; border-radius: 8px; margin-top: 2px; }
+        .radio-switch label { flex: 1; text-align: center; font-size: 11px; font-weight: bold; padding: 6px 0; border-radius: 6px; cursor: pointer; color: #666; transition: 0.2s; user-select: none; }
+        .radio-switch input { display: none; }
+        .radio-switch input:checked + label { background: white; color: #333; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .group-layout { background: #f9f9f9; border: 1px solid #eee; }
+    </style>
+</head>
+<body>
+
+<div id="ui-panel">
+    <div class="panel-header" onclick="togglePanel()">
+        <h1 class="app-title">🫪ほっぺ包みシミュレーター</h1>
+        <span id="toggle-text">閉じる</span>
+    </div>
+
+    <div id="ui-content">
+        <p class="app-description">性別と身長から、ほっぺ包みの雰囲気をシミュレーションします。</p>
+        
+        <div class="input-group group-a">
+            <div class="section-header"><strong>A (包まれる側)</strong></div>
+            <div class="input-row">
+                <div class="input-item"><span class="hint">名前</span><input type="text" id="nameA" placeholder="名前A" oninput="updateScene()"></div>
+                <div class="input-item" style="flex: 0.6;"><span class="hint">性別</span><select id="genderA" onchange="updateScene()"><option value="male">男</option><option value="female" selected>女</option></select></div>
+            </div>
+            <div class="input-row">
+                <div class="input-item"><span class="hint">身長 (cm)</span><input type="number" id="heightA" value="158.0" step="0.1" oninput="updateScene()"></div>
+                <div class="input-item" style="flex: 0.35;"><span class="hint">色</span><input type="color" id="colorA" class="color-picker" value="#ffcc99" oninput="updateScene()"></div>
+            </div>
+        </div>
+
+        <div class="input-group group-b">
+            <div class="section-header"><strong>B (包む側)</strong></div>
+            <div class="input-row">
+                <div class="input-item"><span class="hint">名前</span><input type="text" id="nameB" placeholder="名前B" oninput="updateScene()"></div>
+                <div class="input-item" style="flex: 0.6;"><span class="hint">性別</span><select id="genderB" onchange="updateScene()"><option value="male" selected>男</option><option value="female">女</option></select></div>
+            </div>
+            <div class="input-row">
+                <div class="input-item"><span class="hint">身長 (cm)</span><input type="number" id="heightB" value="171.5" step="0.1" oninput="updateScene()"></div>
+                <div class="input-item" style="flex: 0.35;"><span class="hint">色</span><input type="color" id="colorB" class="color-picker" value="#ffad60" oninput="updateScene()"></div>
+            </div>
+        </div>
+
+        <div class="input-group group-layout">
+            <div class="section-header"><strong>包み方</strong></div>
+            <div class="input-item" style="margin-bottom: 8px;">
+                <span class="hint">Bの手</span>
+                <div class="radio-switch">
+                    <input type="radio" id="hand-left" name="handMode" value="left" onchange="updateScene()">
+                    <label for="hand-left">左手</label>
+                    <input type="radio" id="hand-both" name="handMode" value="both" checked onchange="updateScene()">
+                    <label for="hand-both">両手</label>
+                    <input type="radio" id="hand-right" name="handMode" value="right" onchange="updateScene()">
+                    <label for="hand-right">右手</label>
+                </div>
+            </div>
+        </div>
+
+        <div style="padding: 0 5px;">
+            <button class="switch-btn swap-btn" onclick="swapAB()">⇄ AとBを入れ替える</button>
+            <button class="switch-btn" onclick="switchView()">🔄 視点を切り替える</button>
+        </div>
+        
+        <div id="info-container">
+            <div class="info-box" id="info"></div>
+            <button class="share-btn" onclick="shareToX()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path></svg>で結果をシェアする
+            </button>
+            <div class="other-tools-link">
+                <p style="font-size: 10px; color: #888; margin-bottom: 8px;">こちらもチェック❣🤩</p>
+                <a href="https://qwertyaz111.github.io/my-site-hub/">ツール・シミュレーター一覧</a>
+            </div>
+            <div class="usage-notes">
+                スクショ投稿や加工、トレース等はご自由にお楽しみください。<br>
+                ※営利目的や商用利用はご遠慮ください。
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="view-label">三人称視点</div>
+<div class="crosshair" id="crosshair" style="display:none;"></div>
+<div id="canvas-container"></div>
+
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
+
+// ===== 手モデル =====
+// ===== CORE (pure math: hand skeleton, collision, auto-fit) =====
+const rad = d => d * Math.PI / 180;
+const vadd = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const vsub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const vmul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const vdot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const vcross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const vlen = a => Math.sqrt(vdot(a, a));
+const vnorm = a => { const l = vlen(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const mm = (a, b) => {
+    const r = new Array(9);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++)
+        r[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j];
+    return r;
+};
+const mv = (m, v) => [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]];
+const mtv = (m, v) => [m[0] * v[0] + m[3] * v[1] + m[6] * v[2], m[1] * v[0] + m[4] * v[1] + m[7] * v[2], m[2] * v[0] + m[5] * v[1] + m[8] * v[2]];
+const rx = a => { const c = Math.cos(a), s = Math.sin(a); return [1, 0, 0, 0, c, -s, 0, s, c]; };
+const ry = a => { const c = Math.cos(a), s = Math.sin(a); return [c, 0, s, 0, 1, 0, -s, 0, c]; };
+const rz = a => { const c = Math.cos(a), s = Math.sin(a); return [c, -s, 0, s, c, 0, 0, 0, 1]; };
+
+// ---- hand dimensions (base: wrist to middle fingertip 18.5cm, unit cm) ----
+const BASE_HAND = 18.5;
+const PALM = { w: 8.4, l: 10.2, t: 2.6 };
+const HT = PALM.t / 2;
+const FING = [
+    { x: 2.7,  L: [3.9, 2.3, 1.9], r: 0.70 },
+    { x: 0.9,  L: [4.4, 2.7, 2.0], r: 0.72 },
+    { x: -0.9, L: [4.1, 2.5, 2.0], r: 0.68 },
+    { x: -2.7, L: [3.2, 1.9, 1.8], r: 0.60 }
+];
+const CURL = [85, 100, 65];
+FING.forEach(f => { f.z = -(PALM.t / 2 - f.r); });   // finger centre line: flush with the palm-side surface
+const THUMB_L = [4.4, 3.0, 2.4], THUMB_RS = [0.95, 0.9, 0.82];
+const THUMB_BASE = [1.8, 0.8, 0.0];
+const THUMB_TIP = 2.4;
+const PC = [0, 5.1, -HT];       // palm-side surface center
+const WEB = [3.4, 6.5, -HT];    // thumb/index web
+
+// ---- hand state ----
+function mkHand(f, n, th, o) {
+    o = o || {};
+    return {
+        f: f, n: n, th: th || null, k: 1, p: [0, 0, 0], R: null, flip: false, bx: 0, bz: 0, e: o.e ? o.e.slice() : null,
+        c: (o.c || [0.10, 0.13, 0.17, 0.22]).slice(),
+        s: (o.s || [3, 0.5, -2, -5]).slice(),
+        t: (o.t || [0.15, 0, 0]).slice()
+    };
+}
+function setOrient(h, k) {
+    const f = vnorm(h.f);
+    const n = vnorm(vsub(h.n, vmul(f, vdot(h.n, f))));
+    const xDir = vcross(n, f);
+    h.flip = h.th ? vdot(h.th, xDir) < 0 : false;
+    const Z = vmul(n, -1);
+    h.R = [xDir[0], f[0], Z[0], xDir[1], f[1], Z[1], xDir[2], f[2], Z[2]];
+    h.k = k;
+}
+const toW = (h, l) => { const sx = h.flip ? -h.k : h.k; return vadd(h.p, mv(h.R, [sx * l[0], h.k * l[1], h.k * l[2]])); };
+const toL = (h, w) => { const sx = h.flip ? -h.k : h.k; const v = mtv(h.R, vsub(w, h.p)); return [v[0] / sx, v[1] / h.k, v[2] / h.k]; };
+function place(h, aLocal, wPt) {
+    h.p = [0, 0, 0];
+    const a = toW(h, aLocal);
+    h.p = vsub(wPt, a);
+}
+
+// ---- skeleton (local coords) ----
+function fingerPts(h, i) {
+    const f = FING[i], c = h.c[i], e = h.e ? h.e[i] : c, s = rad(h.s[i]);
+    const base = [f.x, PALM.l - 0.2, f.z];
+    const F1 = mm(rx(-rad(CURL[0]) * c), rz(-s));
+    const p1 = vadd(base, vmul(mv(F1, [0, 1, 0]), f.L[0]));
+    const F2 = mm(F1, rx(-rad(CURL[1]) * e));
+    const p2 = vadd(p1, vmul(mv(F2, [0, 1, 0]), f.L[1]));
+    const F3 = mm(F2, rx(-rad(CURL[2]) * e));
+    const p3 = vadd(p2, vmul(mv(F3, [0, 1, 0]), f.L[2]));
+    return [base, p1, p2, p3];
+}
+function thumbPts(h, t) {
+    t = t || h.t;
+    const Rtb = mm(mm(rx(-0.12), ry(0)), rz(-0.75));
+    const Rc = mm(mm(rx(-rad(50) * t[0]), ry(rad(t[2]))), rz(-rad(t[1])));
+    const F1 = mm(Rtb, Rc);
+    const base = THUMB_BASE;
+    const p1 = vadd(base, vmul(mv(F1, [0, 1, 0]), THUMB_L[0]));
+    const F2 = mm(F1, rx(-rad(55) * t[0]));
+    const p2 = vadd(p1, vmul(mv(F2, [0, 1, 0]), THUMB_L[1]));
+    const F3 = mm(F2, rx(-rad(70) * t[0]));
+    const p3 = vadd(p2, vmul(mv(F3, [0, 1, 0]), THUMB_L[2]));
+    return [base, p1, p2, p3];
+}
+
+// ---- forearm (bends at the wrist: bx=flexion, bz=side deviation) ----
+const ARM_LEN = 24, ARM_W = 2.6, ARM_T = 1.95, ARM_START = [0, 0.4, 0];
+function armFrame(h) { return mm(rx(rad(h.bx)), rz(rad(h.bz))); }          // local arm frame
+function armEndLocal(h) { return vadd(ARM_START, vmul(mv(armFrame(h), [0, -1, 0]), ARM_LEN)); }
+function armDirW(h) { return vnorm(vsub(toW(h, armEndLocal(h)), toW(h, ARM_START))); }
+
+// ---- capsules (world) for collision ----
+const PALM_XS = [-3, -2, -1, 0, 1, 2, 3];
+function capsules(h, withArm) {
+    const out = [], r1 = HT * h.k;
+    PALM_XS.forEach(x => out.push({ a: toW(h, [x, 1.3, 0]), b: toW(h, [x, 8.9, 0]), r: r1, tag: 'palm' }));
+    for (let i = 0; i < 4; i++) {
+        const pts = fingerPts(h, i).map(p => toW(h, p));
+        for (let j = 0; j < 3; j++) out.push({ a: pts[j], b: pts[j + 1], r: FING[i].r * h.k, tag: 'f' + i });
+    }
+    const tp = thumbPts(h).map(p => toW(h, p));
+    for (let j = 0; j < 3; j++) out.push({ a: tp[j], b: tp[j + 1], r: THUMB_RS[j] * h.k, tag: 'th' });
+    if (withArm) { const dl = vnorm(vsub(armEndLocal(h), ARM_START)); out.push({ a: toW(h, vadd(ARM_START, vmul(dl, 3))), b: toW(h, armEndLocal(h)), r: ARM_T * h.k, tag: 'arm' }); }
+    return out;
+}
+function segDist(p1, q1, p2, q2) {
+    const d1 = vsub(q1, p1), d2 = vsub(q2, p2), r = vsub(p1, p2);
+    const a = vdot(d1, d1), e = vdot(d2, d2), f = vdot(d2, r);
+    const cl = (x) => Math.max(0, Math.min(1, x));
+    let s, t;
+    if (a <= 1e-9 && e <= 1e-9) return vlen(r);
+    if (a <= 1e-9) { s = 0; t = cl(f / e); }
+    else {
+        const c = vdot(d1, r);
+        if (e <= 1e-9) { t = 0; s = cl(-c / a); }
+        else {
+            const b = vdot(d1, d2), den = a * e - b * b;
+            s = den !== 0 ? cl((b * f - c * e) / den) : 0;
+            t = (b * s + f) / e;
+            if (t < 0) { t = 0; s = cl(-c / a); }
+            else if (t > 1) { t = 1; s = cl((b - c) / a); }
+        }
+    }
+    return vlen(vsub(vadd(p1, vmul(d1, s)), vadd(p2, vmul(d2, t))));
+}
+// penetration (cm) between two hands: returns {sum, max}
+function penetration(hA, hB, margin, withArm) {
+    const A = capsules(hA, withArm), B = capsules(hB, withArm);
+    let sum = 0, max = 0;
+    for (const a of A) for (const b of B) {
+        const d = segDist(a.a, a.b, b.a, b.b) - a.r - b.r - (margin || 0);
+        if (d < 0) { sum += d * d; if (-d > max) max = -d; }
+    }
+    return { sum: sum, max: max };
+}
+function minGap(hA, hB, tagsA, tagsB) {
+    const A = capsules(hA, true).filter(c => !tagsA || tagsA.includes(c.tag)), B = capsules(hB, true).filter(c => !tagsB || tagsB.includes(c.tag));
+    let m = 1e9;
+    for (const a of A) for (const b of B) m = Math.min(m, segDist(a.a, a.b, b.a, b.b) - a.r - b.r);
+    return m;
+}
+
+// ---- solvers ----
+function solveCurl(h, i, worldPt) {
+    const l = toL(h, worldPt), f = FING[i];
+    const ty = l[1] - PALM.l, tz = l[2] - f.z;
+    let best = 0, bd = 1e9;
+    for (let c = 0; c <= 1.3; c += 0.01) {
+        let y = 0, z = 0, a = 0;
+        for (let j = 0; j < 3; j++) { a += rad(CURL[j]) * c; y += f.L[j] * Math.cos(a); z -= f.L[j] * Math.sin(a); }
+        const d = (y - ty) * (y - ty) + (z - tz) * (z - tz);
+        if (d < bd) { bd = d; best = c; }
+    }
+    return best;
+}
+function solveThumb(h, worldPt) {
+    let best = [0.2, 0, 0], bd = 1e9;
+    for (let tc = 0; tc <= 1.2001; tc += 0.1) for (let ts = -40; ts <= 40; ts += 20) for (let tt = -60; tt <= 60; tt += 20) {
+        const w = toW(h, thumbPts(h, [tc, ts, tt])[3]);
+        const d = vlen(vsub(w, worldPt));
+        if (d < bd) { bd = d; best = [tc, ts, tt]; }
+    }
+    return best;
+}
+function backPt(me, other, i, frac, zl) {
+    const f = FING[i], len = f.L[0] + f.L[1] + f.L[2];
+    const tip = toW(me, [f.x, PALM.l + frac * len, 0]);
+    const l = toL(other, tip);
+    return toW(other, [l[0], l[1], zl]);
+}
+function wrapBack(me, other, frac, zl) { for (let i = 0; i < 4; i++) me.c[i] = solveCurl(me, i, backPt(me, other, i, frac, zl)); }
+function thumbOver(me, other, lx, ly) { me.t = solveThumb(me, toW(other, [lx, ly, HT + 0.7])); }
+
+// generic pattern-search optimizer
+function optimize(vars, cost, maxEvals) {
+    let best = cost(), evals = 1;
+    let step = vars.map(v => v.step);
+    while (evals < maxEvals) {
+        let improved = false;
+        for (let i = 0; i < vars.length && evals < maxEvals; i++) {
+            const v = vars[i], x0 = v.get();
+            for (const dir of [1, -1]) {
+                const x1 = Math.max(v.min, Math.min(v.max, x0 + dir * step[i]));
+                if (x1 === x0) continue;
+                v.set(x1); const c = cost(); evals++;
+                if (c < best - 1e-9) { best = c; improved = true; break; }
+                v.set(x0);
+            }
+        }
+        if (!improved) { step = step.map(s => s * 0.5); if (Math.max(...step.map((s, i) => s / vars[i].step)) < 0.06) break; }
+    }
+    return best;
+}
+
+
+// ===== auto-fit for each pose =====
+const VAR = (get, set, min, max, step, after) => ({ get, set: v => { set(v); if (after) after(); }, min, max, step });
+const clampv = (v, a, b) => Math.max(a, Math.min(b, v));
+function fingerVars(h, after, cmax, smax) {
+    const out = [];
+    for (let i = 0; i < 4; i++) {
+        out.push(VAR(() => h.c[i], v => h.c[i] = v, 0, cmax || 1.3, 0.08, after));
+        out.push(VAR(() => h.s[i], v => h.s[i] = v, -(smax || 25), smax || 25, 3, after));
+    }
+    return out;
+}
+function fingerVarsE(h, smax) {
+    const out = [];
+    for (let i = 0; i < 4; i++) out.push(VAR(() => h.c[i], v => h.c[i] = v, 0, 1.3, 0.06), VAR(() => h.e[i], v => h.e[i] = v, 0, 1.3, 0.06), VAR(() => h.s[i], v => h.s[i] = v, -(smax || 20), smax || 20, 3));
+    return out;
+}
+function thumbVars(h, after) {
+    return [VAR(() => h.t[0], v => h.t[0] = v, 0, 1.2, 0.1, after), VAR(() => h.t[1], v => h.t[1] = v, -40, 40, 6, after), VAR(() => h.t[2], v => h.t[2] = v, -60, 60, 8, after)];
+}
+const tipW = (h, i) => toW(h, fingerPts(h, i)[3]);
+const thumbTipW = h => toW(h, thumbPts(h)[3]);
+const armCost = (h, want) => 12 * (1 - vdot(armDirW(h), vnorm(want)));
+const armVars = (h, after) => [VAR(() => h.bx, v => h.bx = v, -50, 50, 6, after), VAR(() => h.bz, v => h.bz = v, -30, 30, 5, after)];
+// gap between the closest finger capsules of two hands (packing term: fingers should touch, not float apart)
+function fingerContact(A, B) {
+    const ca = capsules(A, false).filter(c => c.tag[0] === 'f'), cb = capsules(B, false).filter(c => c.tag[0] === 'f');
+    let s = 0;
+    for (const [P, Q] of [[ca, cb], [cb, ca]]) for (const a of P) {
+        let m = 1e9;
+        for (const b of Q) m = Math.min(m, segDist(a.a, a.b, b.a, b.b) - a.r - b.r);
+        s += Math.pow(Math.max(0, m), 2);
+    }
+    return s;
+}
+const d2 = (a, b) => { const d = vlen(vsub(a, b)); return d * d; };
+
+
+// ---- shared contact helpers ----
+const ptGap = (p, caps) => { let m = 1e9; for (const c of caps) { const g = segDist(p, p, c.a, c.b) - c.r; if (g < m) m = g; } return m; };
+const bodyCaps = h => capsules(h, true).filter(c => c.tag === 'palm' || c.tag === 'arm');
+// distance from a world point to the flat dorsal patch of hand o (zc = patch height in o's local units)
+function backDist(o, p, zc) {
+    const l = toL(o, p);
+    const q = toW(o, [clampv(l[0], -3.4, 3.4), clampv(l[1], 0.5, 9.6), zc]);
+    return vlen(vsub(p, q));
+}
+// the smaller palm must lie flat on the bigger one (one-sided: the part of the big palm that sticks out is irrelevant)
+function palmFlat(A, B) {
+    const S = A.k <= B.k ? A : B, L = S === A ? B : A;
+    const cq = capsules(L, false).filter(c => c.tag === 'palm'); let s = 0, n = 0;
+    for (const x of [-2.5, 0, 2.5]) for (const y of [2.5, 5, 7.5]) { const g = Math.max(0, ptGap(toW(S, [x, y, -HT]), cq)); s += g * g; n++; }
+    return s / n;
+}
+// the webs (skin between the finger bases) of each hand
+const webPts = h => [0, 1, 2].map(j => toW(h, [(FING[j].x + FING[j + 1].x) / 2, PALM.l + 0.3, FING[j].z]));
+// web of one hand must press against the pad of the partner's finger (0.3 = skin thickness)
+function webPad(A, B) {
+    let s = 0;
+    for (const [h, o] of [[A, B], [B, A]]) {
+        const caps = capsules(o, false).filter(c => c.tag[0] === 'f');
+        for (const p of webPts(h)) { const g = ptGap(p, caps) - 0.3; s += g > 0 ? g * g : 0.3 * g * g; }
+    }
+    return s;
+}
+
+// finger i's straight tip projected sideways onto the partner's back at partner-local height yl
+function backAt(me, other, i, yl, zl) {
+    const f = FING[i], len = f.L[0] + f.L[1] + f.L[2];
+    const tip = toW(me, [f.x, PALM.l + 0.5 * len, 0]);
+    const l = toL(other, tip);
+    return toW(other, [l[0], yl, zl]);
+}
+// number of neighbouring fingers (sorted side by side) that belong to the same hand: 0 = perfectly alternating A,B,A,B
+function altBreaks(A, B, j) {
+    const v = [];
+    for (const [w, h] of [[0, A], [1, B]]) for (let i = 0; i < 4; i++) v.push([toW(h, fingerPts(h, i)[j])[2], w]);
+    v.sort((a, b) => a[0] - b[0]);
+    let n = 0; for (let i = 1; i < v.length; i++) if (v[i][1] === v[i - 1][1]) n++;
+    return n;
+}
+const altAll = (A, B) => altBreaks(A, B, 1) + altBreaks(A, B, 2) + altBreaks(A, B, 3);
+
+// ---------- lovers' hold ----------
+// palms lie flat on each other, fingers alternate A,B,A,B in the contact plane, and every web
+// (skin between the finger bases) presses against the pad of a partner finger.  Works for any size ratio:
+// the smaller hand opens its fingers and the bigger one closes them so both finger sets mesh.
+const LOVERS_STARTS = [{ dz: 0.9, sp: 1, sx: 1 }, { dz: -0.9, sp: 1, sx: 1 }, { dz: 0.45, sp: 1, sx: 1 }, { dz: -0.45, sp: 1, sx: 1 },
+    // fall-backs for extreme size ratios: stronger size-dependent spread of the fingers
+    { dz: 0.9, sp: 1, sx: 1.7 }, { dz: -0.9, sp: 1, sx: 1.7 }, { dz: 0.45, sp: 0.8, sx: 2.3 }, { dz: -0.45, sp: 0.8, sx: 2.3 }];
+function fitLovers(kA, kB, evals) {
+    let best = null;
+    for (const st of LOVERS_STARTS) {
+        const SMAX = 60;
+        const P = { sA: 0, sB: 0, tilt: 8, gap: 0.2, dy: 0, dz: st.dz };
+        const fA = Math.pow(2 * kB / (kA + kB), st.sx), fB = Math.pow(2 * kA / (kA + kB), st.sx);     // size-aware initial finger spread
+        const mk = (n, f) => mkHand([0, -1, 0], n, [0, 0, 1], { s: [22, 8, -8, -22].map(v => clampv(v * st.sp * f, -SMAX, SMAX)), c: [.25, .25, .25, .25], e: [.25, .25, .25, .25], t: [.3, 0, 0] });
+        const A = mk([1, 0, 0], fA), B = mk([-1, 0, 0], fB);
+        const layout = () => {
+            const a = rad(P.sA), b = rad(P.sB), t = rad(P.tilt);
+            A.f = [Math.sin(t), -Math.cos(a) * Math.cos(t), -Math.sin(a)]; B.f = [Math.sin(t), -Math.cos(b) * Math.cos(t), -Math.sin(b)];
+            setOrient(A, kA); setOrient(B, kB);
+            place(A, PC, [-P.gap / 2, 0, -P.dz / 2]); place(B, PC, [P.gap / 2, P.dy, P.dz / 2]);
+        };
+        layout();
+        const lay = [VAR(() => P.sA, v => P.sA = v, -10, 10, 2, layout), VAR(() => P.sB, v => P.sB = v, -10, 10, 2, layout), VAR(() => P.tilt, v => P.tilt = v, -5, 20, 3, layout),
+            VAR(() => P.gap, v => P.gap = v, -0.5, 2.5, 0.2, layout), VAR(() => P.dy, v => P.dy = v, -4, 4, 0.4, layout), VAR(() => P.dz, v => P.dz = v, -3, 3, 0.3, layout)];
+        const fin = [];
+        for (const h of [A, B]) for (let i = 0; i < 4; i++) {
+            fin.push(VAR(() => h.c[i], v => h.c[i] = v, 0, 1.3, 0.06), VAR(() => h.e[i], v => h.e[i] = v, 0, 1.3, 0.06), VAR(() => h.s[i], v => h.s[i] = v, -SMAX, SMAX, 3));
+        }
+        fin.push(...thumbVars(A), ...thumbVars(B), ...armVars(A), ...armVars(B));
+        const base = () => 2000 * penetration(A, B, 0.03, true).sum + 12 * Math.pow(minGap(A, B, ['palm'], ['palm']), 2) + 400 * palmFlat(A, B);
+        const cost = () => {
+            let c = base() + 2.5 * fingerContact(A, B) + 40 * altAll(A, B) + 80 * webPad(A, B);
+            const M = vmul(vadd(toW(A, PC), toW(B, PC)), 0.5);
+            for (const [h, o] of [[A, B], [B, A]]) {
+                for (let i = 0; i < 4; i++) {
+                    const pts = fingerPts(h, i);
+                    // interlace: middle joints lie in the contact plane between the palms
+                    for (const j of [1, 2]) { const w = toW(h, pts[j]); c += 3 * Math.pow(w[0] - M[0], 2); }
+                    // fingertip hooks onto the back of the partner's hand
+                    c += 0.8 * d2(toW(h, pts[3]), backAt(h, o, i, 11.5, 1.45));
+                    c += 25 * Math.pow(Math.max(0, 0.6 - h.e[i]), 2) + 25 * Math.pow(Math.max(0, 0.3 - h.c[i]), 2);
+                }
+                // 【追加】隣り合う指の曲がり具合（角度）を揃えるペナルティ
+                for (let i = 0; i < 3; i++) {
+                    c += 120 * Math.pow(h.c[i] - h.c[i + 1], 2);
+                    c += 120 * Math.pow(h.e[i] - h.e[i + 1], 2);
+                }
+            }
+            c += 0.3 * d2(thumbTipW(A), toW(B, [3.0, 6.5, HT + 0.7])) + 0.3 * d2(thumbTipW(B), toW(A, [3.0, 6.5, HT + 0.7]));
+            // forearms cross each other (the two forearms swap sides and cross), the hands themselves stay as they were
+            c += 5 * (armCost(A, [-0.35, 1, -0.6]) + armCost(B, [0.35, 1, 0.6]));
+            return c;
+        };
+        optimize(lay, base, 500);
+        const c = optimize(lay.concat(fin), cost, evals || 3500);
+        const ok = altAll(A, B) === 0 && penetration(A, B, 0, true).max < 0.03 && palmFlat(A, B) < 0.015;
+        if (!best || (ok && !best.ok) || (ok === best.ok && c < best.cost)) best = { A, B, cost: c, ok };
+        if (best.ok && best.cost < 250) break;
+    }
+    return best;
+}
+
+// ---------- palms together (palms flush, fingers straight and touching) ----------
+function fitPalms(kA, kB) {
+    const o = () => ({ c: [0, 0, 0, 0], e: [0, 0, 0, 0], s: [0, 0, 0, 0], t: [0.05, -15, 0] });
+    const A = mkHand([0, 1, 0], [1, 0, 0], [0, 0, 1], o()), B = mkHand([0, 1, 0], [-1, 0, 0], [0, 0, 1], o());
+    setOrient(A, kA); setOrient(B, kB);
+    // the two palm centres meet, so a small palm sits entirely inside a big one whatever the sizes
+    place(A, PC, [0, 0, 0]); place(B, PC, [0, 0, 0]);
+    const vars = thumbVars(A).concat(thumbVars(B));
+    const cost = () => {
+        let c = 2000 * penetration(A, B, 0, false).sum;
+        for (const h of [A, B]) {
+            // thumbs lie flush against the contact plane (side by side, never sunk into the partner), straight, pointing up and out
+            const sg = h === A ? -1 : 1, tp = thumbPts(h).map(p => toW(h, p));
+            for (const j of [2, 3]) c += 4 * Math.pow(tp[j][0] - sg * THUMB_RS[Math.min(j, 2)] * h.k, 2);
+            c += 3 * h.t[0] * h.t[0] + 0.002 * Math.pow(h.t[1] + 15, 2);
+        }
+        return c;
+    };
+    optimize(vars, cost, 2500);
+    // forearms: tilt them apart a little so the thicker wrists do not sink into each other
+    const av = [VAR(() => A.bx, v => A.bx = v, -50, 50, 4), VAR(() => B.bx, v => B.bx = v, -50, 50, 4)];
+    optimize(av, () => 2000 * penetration(A, B, 0.03, true).sum + 0.002 * (A.bx * A.bx + B.bx * B.bx), 400);
+    return { A, B, cost: 0 };
+}
+
+// ---------- handshake ----------
+// palms (and the thumb/index webs) lie against each other; every finger then wraps the partner's hand as far as it can:
+// against a small partner the fingers close around the back of the hand (even reaching the wrist), against a big
+// partner they stay more open and just cling to the edge of the hand.
+const HS_PATCH = [[3.4, 6.5], [2, 4.5], [3.4, 4], [1.5, 6.5], [2.6, 5.4]];     // palm area around the web
+function fitHandshake(kA, kB, evals) {
+    let best = null;
+    for (const st of [{ a: 30, w: 0 }, { a: 18, w: 15 }, { a: 40, w: -12 }]) {
+        const r = fitHandshake1(kA, kB, evals, st);
+        const fg = Math.max(...fingerGaps(r.A, r.B), ...fingerGaps(r.B, r.A));
+        r.ok = penetration(r.A, r.B, 0, true).max < 0.03 && minGap(r.A, r.B, ['palm'], ['palm']) < 0.3 && fg < 0.2;
+        if (!best || (r.ok && !best.ok) || (r.ok === best.ok && r.cost < best.cost)) best = r;
+        if (best.ok) break;
+    }
+    return best;
+}
+// gap between each finger (mid/distal joint) and the partner's palm/arm
+function fingerGaps(h, o) {
+    const bc = bodyCaps(o), out = [];
+    for (let i = 0; i < 4; i++) {
+        const pts = fingerPts(h, i).map(p => toW(h, p));
+        out.push(Math.min(ptGap(pts[2], bc), ptGap(pts[3], bc)) - FING[i].r * h.k);
+    }
+    return out;
+}
+function fitHandshake1(kA, kB, evals, st) {
+    const P = { aA: st.a, aB: st.a, wA: st.w, wB: -st.w, gap: 0, dx: 0, dy: 0 };
+    const sp = [3, 0.5, -2, -5];
+    // 【修正】法線(n)を反転させて上下を正しくし、thも[0,1,0]にしてフリップ判定を整合させ親指を上にする
+    const mk = (f, n) => mkHand(f, n, [0, 1, 0], { s: sp.slice(), c: [.4, .4, .4, .4], e: [.5, .5, .5, .5], t: [.3, 0, 0] });
+    const A = mk([1, 0, 0], [0, 0, 1]), B = mk([-1, 0, 0], [0, 0, -1]);
+    const layout = () => {
+        const a = rad(P.aA), b = rad(P.aB), wa = rad(P.wA), wb = rad(P.wB);
+        A.f = [Math.cos(a) * Math.cos(wa), -Math.sin(a), -Math.cos(a) * Math.sin(wa)];
+        B.f = [-Math.cos(b) * Math.cos(wb), -Math.sin(b), Math.cos(b) * Math.sin(wb)];
+        setOrient(A, kA); setOrient(B, kB);
+        place(A, WEB, [-P.dx / 2, -P.dy / 2, P.gap / 2]); place(B, WEB, [P.dx / 2, P.dy / 2, -P.gap / 2]);
+    };
+    layout();
+    // the two hands share one approach angle (mirror symmetric layout); offsets stay free
+    const lay = [VAR(() => P.aA, v => { P.aA = v; P.aB = v; }, 0, 45, 5, layout), VAR(() => P.wA, v => { P.wA = v; P.wB = -v; }, -35, 35, 5, layout),
+        VAR(() => P.gap, v => P.gap = v, -0.5, 3, 0.3, layout), VAR(() => P.dx, v => P.dx = v, -6, 6, 0.6, layout), VAR(() => P.dy, v => P.dy = v, -5, 5, 0.5, layout)];
+    const fin = fingerVarsE(A, 14).concat(fingerVarsE(B, 14), thumbVars(A), thumbVars(B), armVars(A), armVars(B));
+    const patch = () => {
+        let c = 0;
+        for (const [h, o] of [[A, B], [B, A]]) {
+            const pc = capsules(o, false).filter(x => x.tag === 'palm');
+            for (const [x, y] of HS_PATCH) { const g = Math.max(0, ptGap(toW(h, [x, y, -HT]), pc)); c += g * g; }
+        }
+        return c / HS_PATCH.length;
+    };
+    const base = () => 5000 * penetration(A, B, 0.03, true).sum + 200 * Math.pow(minGap(A, B, ['palm'], ['palm']), 2) + 10 * d2(toW(A, WEB), toW(B, WEB)) + 300 * patch();
+    const wrap = (h, o) => {
+        const bc = bodyCaps(o); let c = 0;
+        for (let i = 0; i < 4; i++) {
+            const pts = fingerPts(h, i).map(p => toW(h, p));
+            // mid / distal joints cling to the partner's hand
+            for (const j of [2, 3]) { const g = Math.max(0, ptGap(pts[j], bc) - FING[i].r * h.k); c += 8 * g * g; }
+            // the fingertip reaches for the back of the partner's hand: arrives there on a small hand, falls short on a big one
+            const d = backDist(o, pts[3], HT + FING[i].r * h.k / o.k);
+            c += 0.6 * d * d;
+        }
+        return c;
+    };
+    const cost = () => {
+        let c = base() + wrap(A, B) + wrap(B, A);
+        c += 0.8 * d2(thumbTipW(A), toW(B, [3.2, 5.5, HT + 0.9])) + 0.8 * d2(thumbTipW(B), toW(A, [3.2, 5.5, HT + 0.9]));
+        c += armCost(A, [-1, 0.55, 0]) + armCost(B, [1, 0.55, 0]);   // forearms rise away from the clasp: V shape
+        return c;
+    };
+    optimize(lay, base, 600);
+    let c = optimize(lay.concat(fin), cost, evals || 4000);
+    // a finger that still floats free is re-seeded over a coarse grid of bends, then everything is polished again
+    const grid = [0, 0.25, 0.5, 0.75, 1.0, 1.3];
+    let redo = false;
+    for (const [h, o] of [[A, B], [B, A]]) {
+        const fg = fingerGaps(h, o);
+        for (let i = 0; i < 4; i++) {
+            if (fg[i] < 0.15) continue;
+            redo = true;
+            let bc = cost(), bv = [h.c[i], h.e[i], h.s[i]]; const s0 = h.s[i];
+            for (const cc of grid) for (const ee of grid) for (const ss of [s0 - 8, s0, s0 + 8]) {
+                h.c[i] = cc; h.e[i] = ee; h.s[i] = clampv(ss, -14, 14);
+                const v = cost(); if (v < bc - 1e-9) { bc = v; bv = [cc, ee, h.s[i]]; }
+            }
+            h.c[i] = bv[0]; h.e[i] = bv[1]; h.s[i] = bv[2];
+        }
+    }
+    if (redo) c = optimize(lay.concat(fin), cost, 1500);
+    return { A, B, cost: c };
+}
+
+// ===== 手の描画（手繋ぎシミュレーターの描画コードを流用） =====
+function roundedPalmGeo(w, h, d, r, seg) {
+    const g = new THREE.BoxGeometry(w, h, d, seg, seg, seg);
+    const p = g.attributes.position, n = g.attributes.normal;
+    const v = new THREE.Vector3(), c = new THREE.Vector3(), dv = new THREE.Vector3();
+    const hw = w / 2 - r, hh = h / 2 - r, hd = d / 2 - r;
+    for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i);
+        c.set(Math.max(-hw, Math.min(hw, v.x)), Math.max(-hh, Math.min(hh, v.y)), Math.max(-hd, Math.min(hd, v.z)));
+        dv.copy(v).sub(c);
+        if (dv.length() > 1e-6) { dv.normalize(); n.setXYZ(i, dv.x, dv.y, dv.z); v.copy(c).addScaledVector(dv, r); }
+        const t = (v.y + h / 2) / h;
+        v.x *= 0.8 + 0.2 * Math.min(1, t * 1.5);
+        p.setXYZ(i, v.x, v.y, v.z);
+    }
+    g.translate(0, h / 2, 0);
+    return g;
+}
+let palmGeo, cylGeo, sphGeo, armGeo;
+function buildVisual(color) {
+    const mat = new THREE.MeshPhongMaterial({ color: color, transparent: true, opacity: 0.85 });
+    const group = new THREE.Group();
+    const mk = geo => { const m = new THREE.Mesh(geo, mat); m.matrixAutoUpdate = false; group.add(m); return m; };
+    const v = { mat: mat, group: group, palm: mk(palmGeo), arm: mk(armGeo), cyl: [], sph: [] };
+    for (let i = 0; i < 15; i++) v.cyl.push(mk(cylGeo));
+    for (let i = 0; i < 20; i++) v.sph.push(mk(sphGeo));
+    handParent.add(group);
+    return v;
+}
+const _q = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0), _m = new THREE.Matrix4();
+function setSeg(mesh, a, b, r) {
+    const A = new THREE.Vector3(a[0], a[1], a[2]), B = new THREE.Vector3(b[0], b[1], b[2]);
+    const dir = B.clone().sub(A), len = dir.length() || 1e-6;
+    _q.setFromUnitVectors(_up, dir.divideScalar(len));
+    mesh.matrix.compose(A.add(B).multiplyScalar(0.5), _q, new THREE.Vector3(r, len, r));
+    mesh.matrixWorldNeedsUpdate = true;
+}
+function setSph(mesh, p, r) {
+    mesh.matrix.compose(new THREE.Vector3(p[0], p[1], p[2]), _q.identity(), new THREE.Vector3(r, r, r));
+    mesh.matrixWorldNeedsUpdate = true;
+}
+function updateVisual(v, h) {
+    const k = h.k, sx = h.flip ? -k : k, R = h.R;
+    v.palm.matrix.set(R[0] * sx, R[1] * k, R[2] * k, h.p[0], R[3] * sx, R[4] * k, R[5] * k, h.p[1], R[6] * sx, R[7] * k, R[8] * k, h.p[2], 0, 0, 0, 1);
+    v.palm.matrixWorldNeedsUpdate = true;
+    for (let i = 0; i < 4; i++) {
+        const pts = fingerPts(h, i).map(p => toW(h, p)), r = FING[i].r * k;
+        for (let j = 0; j < 3; j++) setSeg(v.cyl[i * 3 + j], pts[j], pts[j + 1], r);
+        for (let j = 0; j < 4; j++) setSph(v.sph[i * 4 + j], pts[j], r);
+    }
+    const tp = thumbPts(h).map(p => toW(h, p));
+    for (let j = 0; j < 3; j++) setSeg(v.cyl[12 + j], tp[j], tp[j + 1], THUMB_RS[j] * k);
+    for (let j = 0; j < 4; j++) setSph(v.sph[16 + j], tp[j], THUMB_RS[Math.min(j, 2)] * k);
+    // forearm (elliptical cross-section)
+    const F = armFrame(h);
+    const wd = u => { const w = mv(R, [sx * u[0], k * u[1], k * u[2]]); return new THREE.Vector3(w[0], w[1], w[2]); };
+    const ex = wd(mv(F, [1, 0, 0])), ey = wd(mv(F, [0, -1, 0])), ez = wd(mv(F, [0, 0, 1]));
+    const c = toW(h, vadd(ARM_START, vmul(mv(F, [0, -1, 0]), ARM_LEN / 2)));
+    _m.makeBasis(ex.multiplyScalar(ARM_W), ey.clone().multiplyScalar(-ARM_LEN), ez.multiplyScalar(ARM_T));
+    _m.setPosition(c[0], c[1], c[2]);
+    v.arm.matrix.copy(_m); v.arm.matrixWorldNeedsUpdate = true;
+    v.arm.visible = false;   // 前腕はマネキン側で描くので手モデルの腕は隠す
+}
+
+
+let scene, camera, renderer, clock;
+let personA, personB, walkGroup;
+let currentView = '3rd';
+let handLayer = null, handVis = [], handParent = null;
+const LEAN = 0.3; // 前傾角度(rad)（applyLean用）
+const AXIS_X = new THREE.Vector3(1, 0, 0);
+const DEFAULT_ROT_3RD = { x: 0.05, y: -0.55 }; // 三人称の初期は斜め前から見る
+let rotation = { x: DEFAULT_ROT_3RD.x, y: DEFAULT_ROT_3RD.y }, camDist = 3, isDragging = false, previousTouch = null, initialPinchDist = null;
+
+function init() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xffffff);
+
+    camera = new THREE.PerspectiveCamera(
+        50,
+        window.innerWidth / window.innerHeight,
+        0.01,
+        1000
+    );
+
+    camera.rotation.order = 'YXZ';
+    
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    document.getElementById('canvas-container')
+        .appendChild(renderer.domElement);
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 2.5));
+    scene.add(new THREE.GridHelper(200, 400, 0xeeeeee, 0xf5f5f5));
+
+    walkGroup = new THREE.Group();
+    scene.add(walkGroup);
+
+    clock = new THREE.Clock();
+
+    setupControls();
+
+    window.addEventListener('resize', onWindowResize);
+    
+    window.updateScene = updateScene;
+    window.switchView = switchView;
+    window.swapAB = swapAB;
+    window.shareToX = shareToX;
+
+    window.togglePanel = () => {
+        const panel = document.getElementById('ui-panel');
+        const text = document.getElementById('toggle-text');
+        panel.classList.toggle('collapsed');
+        text.innerText = panel.classList.contains('collapsed') ? '開く' : '閉じる';
+    };
+
+    // 入力フォームからフォーカスが外れた際に、パネルのスクロール位置を上部へリセットする
+    document.querySelectorAll('#ui-panel input, #ui-panel select').forEach(element => {
+        element.addEventListener('blur', () => {
+            const panel = document.getElementById('ui-panel');
+            if (panel) {
+                panel.scrollTop = 0;
+            }
+            // iOS Safari等の画面全体のズレ防止策
+            window.scrollTo(0, 0);
+        });
+    });
+
+    updateScene();
+    animate();
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function swapAB() {
+    const fields = ['name', 'gender', 'height', 'color'];
+    fields.forEach(field => {
+        const elA = document.getElementById(field + 'A');
+        const elB = document.getElementById(field + 'B');
+        const tmp = elA.value;
+        elA.value = elB.value;
+        elB.value = tmp;
+    });
+    updateScene();
+}
+
+function createMannequin(color, heightCm, gender, name, role, otherConfig) {
+    const group = new THREE.Group();
+    const h = heightCm * 0.01;
+    const bodyMat = new THREE.MeshPhongMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.85
+    });
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+
+    const headH = h * 0.13;
+    const neckH = h * 0.05;
+    const torsoH = h * 0.37;
+    const legH = h * 0.45;
+    const eyeY = h * 0.94;
+    const torsoW = (gender === 'male' ? 0.26 : 0.21) * (h/1.7);
+    const torsoDepth = torsoW * 0.5;
+
+    const headBox = new THREE.Group();
+    headBox.position.y = eyeY;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(headH * 0.8, 16, 16), bodyMat);
+    head.position.y = (h - headH * 0.5) - eyeY;
+    headBox.add(head);
+
+    [-1, 1].forEach(side => {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(headH * 0.12, 12, 12), eyeMat);
+        eye.position.set(side * (headH * 0.28), 0, (headH * 0.7));
+        headBox.add(eye);
+    });
+    group.add(headBox);
+    group.headParts = headBox;
+
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(headH*0.3, headH*0.3, neckH, 16), bodyMat);
+    neck.position.y = h - headH - (neckH * 0.5);
+    group.add(neck);
+
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(torsoW, torsoH, torsoDepth), bodyMat);
+    torso.position.y = legH + (torsoH * 0.5);
+    group.add(torso);
+
+    group.arms = [];
+    const armThickness = torsoW * 0.3;
+    const shoulderW = (torsoW * 0.5) + (armThickness * 0.5); // 腕の厚みを考慮して外側に配置
+    const shoulderY = legH + torsoH - (torsoW * 0.15); 
+    const armLen = h * 0.38;
+
+    [-1, 1].forEach(side => {
+        const anchor = new THREE.Group();
+        anchor.position.set(side * shoulderW, shoulderY, 0);
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(armThickness, armLen, torsoW*0.3), bodyMat);
+        mesh.position.y = -armLen * 0.5;
+        anchor.add(mesh);
+        group.add(anchor);
+        group.arms.push(anchor);
+    });
+
+    group.legs = [];
+    [-1, 1].forEach(side => {
+        const anchor = new THREE.Group();
+        anchor.position.set( side * (torsoW * 0.25), legH, 0 );
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry( torsoW*0.4, legH, torsoW*0.4 ), bodyMat);
+        mesh.position.y = -legH * 0.5;
+        anchor.add(mesh);
+        group.add(anchor);
+        group.legs.push(anchor);
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.font = "bold 45px sans-serif"; ctx.fillStyle = "#333"; ctx.textAlign = "center";
+    const displayName = name || (role === 'B' ? 'B' : 'A');
+    ctx.fillText(`${displayName} (${heightCm.toFixed(1)}cm)`, 256, 64);
+    const spriteMaterial = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) });
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.scale.set(1.5, 0.38, 1);
+    sprite.position.y = h + 0.3;
+    group.add(sprite);
+    group.nameTag = sprite;
+
+    group.userData = { height: h, eyeY: eyeY, role: role, depth: torsoDepth, width: torsoW, armThick: armThickness, legH: legH, torsoH: torsoH, shoulderW: shoulderW, shoulderY: shoulderY };
+    group.position.y = 0; group.position.z = 0;
+    return group;
+}
+
+// ===== ポーズ用ヘルパー =====
+// 腰を軸に上半身(頭・首・胴・腕・名前タグ)を前傾させる
+function applyLean(p, angle) {
+    const pivot = new THREE.Group();
+    pivot.position.y = p.userData.legH;
+    const upper = p.children.filter(c => !p.legs.includes(c));
+    upper.forEach(c => { p.remove(c); c.position.y -= p.userData.legH; pivot.add(c); });
+    pivot.rotation.x = angle;
+    p.add(pivot);
+    p.pivot = pivot;
+}
+
+// 腕・脚の棒を2分割して関節(肘・膝)を作る
+function addJoint(anchor) {
+    const mesh = anchor.children[0];
+    const half = mesh.geometry.parameters.height / 2;
+    mesh.scale.y = 0.5;
+    mesh.position.y = -half / 2;
+    const joint = new THREE.Group();
+    joint.position.y = -half;
+    const lower = new THREE.Mesh(mesh.geometry, mesh.material);
+    lower.scale.y = 0.5;
+    lower.position.y = -half / 2;
+    joint.add(lower);
+    anchor.add(joint);
+    anchor.joint = joint;
+    anchor.half = half;
+}
+
+// 真下向きの棒を dir の向きへ回す（回転順 XYZ）
+function aim(node, dir) {
+    const d = dir.clone().normalize();
+    node.rotation.z = Math.asin(Math.max(-1, Math.min(1, d.x)));
+    node.rotation.x = Math.atan2(-d.z, -d.y);
+}
+
+// dirUpper/dirLower は anchor の親座標系での向き
+function aimLimb(anchor, dirUpper, dirLower) {
+    aim(anchor, dirUpper);
+    const inv = anchor.quaternion.clone().invert();
+    aim(anchor.joint, dirLower.clone().applyQuaternion(inv));
+}
+
+// 2関節IK：肩S→手Tに届く肘位置Eを返す（poleは肘の曲がる方向）
+function solveTwoBone(S, T, l1, l2, pole) {
+    const v = T.clone().sub(S);
+    let d = v.length();
+    const maxD = (l1 + l2) * 0.999;
+    if (d > maxD) { v.setLength(maxD); d = maxD; }
+    if (d < 0.02) { v.set(0, -0.02, 0); d = 0.02; }
+    const dir = v.clone().normalize();
+    const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d);
+    const h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+    const p = pole.clone().sub(dir.clone().multiplyScalar(pole.dot(dir)));
+    if (p.lengthSq() < 1e-6) p.set(0, 0, 1);
+    p.normalize();
+    const E = S.clone().add(dir.clone().multiplyScalar(a)).add(p.multiplyScalar(h));
+    const H = S.clone().add(v);
+    return { E, H };
+}
+
+// ワールド方向 → 前傾した上半身(pivot)のローカル方向
+function toLocal(v) {
+    return v.clone().applyAxisAngle(AXIS_X, -LEAN);
+}
+
+// ===== ほっぺ包みポーズ（マネキン＋手繋ぎの手モデル） =====
+let cheekMetrics = null;
+let cheekHands = [];   // COREの手 [手前(+Z), 奥(-Z)]
+
+const _YAXIS = new THREE.Vector3(0, 1, 0);
+function localToWorld(person, local) {
+    return local.clone().applyAxisAngle(_YAXIS, person.rotation.y).add(person.position);
+}
+function worldToGroup(person, world) {
+    return world.clone().sub(person.position).applyAxisAngle(_YAXIS, -person.rotation.y);
+}
+function segPointDist(p1, q1, p2) {
+    const d = q1.clone().sub(p1);
+    const t = Math.max(0, Math.min(1, p2.clone().sub(p1).dot(d) / (d.lengthSq() || 1)));
+    return p1.clone().addScaledVector(d, t).distanceTo(p2);
+}
+
+// 親指専用ソルバー：先端の一致だけでなく、関節が球面に沿い・めり込まず・ねじれない形を選ぶ
+// （COREの solveThumb は先端距離だけで選ぶため、途中の関節が顔にめり込む形を拾うことがある）
+function solveThumbNat(h, targetCm, centreCm, radiusCm) {
+    const C3 = new THREE.Vector3(...centreCm);
+    let best = [0.3, 0, 0], bc = 1e9;
+    for (let tc = 0; tc <= 1.0001; tc += 0.05)
+        for (let ts = -30; ts <= 30; ts += 10)
+            for (let tt = -30; tt <= 30; tt += 10) {
+                const pts = thumbPts(h, [tc, ts, tt]).map(p => toW(h, p));
+                const tipD = Math.hypot(pts[3][0] - targetCm[0], pts[3][1] - targetCm[1], pts[3][2] - targetCm[2]);
+                let pen = 0, hug = 0;
+                for (let j = 0; j < 3; j++) {
+                    const pa = new THREE.Vector3(...pts[j]), pb = new THREE.Vector3(...pts[j + 1]);
+                    pen = Math.max(pen, radiusCm - (segPointDist(pa, pb, C3) - THUMB_RS[j] * h.k));
+                    hug += Math.abs(pb.distanceTo(C3) - (radiusCm + THUMB_RS[Math.min(j + 1, 2)] * h.k));
+                }
+                const cost = tipD + 3 * Math.max(0, pen) + 0.8 * hug + 0.02 * (Math.abs(ts) + Math.abs(tt)) / 10;
+                if (cost < bc) { bc = cost; best = [tc, ts, tt]; }
+            }
+    return best;
+}
+
+// BがAのほっぺを包むポーズ（A＝包まれる人 / B＝包む人 / handMode: 'left'|'both'|'right'）
+function setupCheekCup(A, B, genderB, handMode) {
+    const a = A.userData, b = B.userData;
+    A.arms.forEach(arm => addJoint(arm));
+    B.arms.forEach(arm => addJoint(arm));
+
+    // 向かい合って立つ：B(-X) が A(+X) の正面に
+    const D = 0.46;
+    B.position.set(-D / 2, 0, 0); B.rotation.y = Math.PI / 2;
+    A.position.set(D / 2, 0, 0);  A.rotation.y = -Math.PI / 2;
+
+    // 頭の向き：目線が合うよう、二人とも相手の目の高さへ顔を向ける（見つめ合い）
+    const lookB = Math.max(-0.45, Math.min(0.55, Math.atan2(b.eyeY - a.eyeY, D))) * 0.85;
+    A.userData.headRot = [-lookB, 0, 0.03];
+    B.userData.headRot = [lookB, 0, -0.02];
+
+    // Aの頭（球）と頬の位置
+    const C = new THREE.Vector3(D / 2, a.height * 0.935, 0);   // 頭の中心 (m)
+    const R = a.height * 0.13 * 0.8;                            // 頭の半径 (m)
+    const faceDistCm = (D - R - b.height * 0.13 * 0.8) * 100;   // 顔同士の距離
+
+    // Bの手の大きさ（手繋ぎと同じ推定式・cm）
+    const handCm = (genderB === 'male' ? b.height * 100 * 0.096 + 2.0 : b.height * 100 * 0.088 + 2.7);
+    const kB = Math.min(30, Math.max(9, handCm)) / BASE_HAND;
+
+    cheekHands = [];
+    let worstPen = 0, palmGapMin = 1e9, reachWorst = 0, floatGap = 0;
+    const Cc = [C.x * 100, C.y * 100, C.z * 100], Rc = R * 100, C3 = new THREE.Vector3(...Cc);
+
+    // 使う手：右手=B.arms[0](手前+z側の頬) / 左手=B.arms[1](奥-z側の頬)
+    const sides = handMode === 'right' ? [1] : handMode === 'left' ? [-1] : [1, -1];
+    sides.forEach((sideZ) => {
+        // パラメータ切替：両手＝頬を包む / 片手＝顎の辺りをむにゅっと掴む
+        // 両手：手は顔の「前・斜め下」から当てる。指は頬の表面に沿って横へ流れ、
+        //       親指は顎の前に回り、指と親指で頬を挟む形（写真の片手包みの構図）
+        // 片手：手のひらを顎のラインまで下げ、指は顎〜頬下部に沿って斜めに流れ、
+        //       親指は顎の下・前に入って、顎を下から支えつつ挟む形
+        const jaw = handMode !== 'both';
+        const pcDir = jaw
+            ? new THREE.Vector3(-0.48, -0.60, sideZ * 0.66).normalize()
+            : new THREE.Vector3(-0.55, -0.42, sideZ * 0.72).normalize();
+        const Pc_m = C.clone().addScaledVector(pcDir, R);
+        const Pc = [Pc_m.x * 100, Pc_m.y * 100, Pc_m.z * 100];
+        const n = vnorm(vsub(Cc, Pc));                    // 手のひらの向き（頭の中心へ）
+        const f = jaw
+            ? vnorm([-0.20, 0.90, sideZ * 0.35])          // 指の向き（顎の表面の接線に沿って斜め上）
+            : vnorm([0.15, 1, sideZ * 0.10]);             // 指の向き（ほぼ真上）
+        const h = mkHand(f, n, [-1, 0, 0], {
+            c: [0.10, 0.10, 0.10, 0.10],                  // 後で solveCurl で頬に沿わせる
+            s: [3, 0.5, -2, -5],
+            t: [0.30, 0, 0]                               // 後で solveThumbNat で顎の前へ
+        });
+        setOrient(h, kB);
+        // 手のひらを少し外へ逃がしてから当てる（指の沿いを確保）
+        const outCm = jaw ? 0.55 : 0.4;
+        place(h, PC, [Pc[0] - n[0] * outCm, Pc[1] - n[1] * outCm, Pc[2] - n[2] * outCm]);
+
+        // 指先の目標点へ解く（指が頬／顎の表面を流れる）
+        const FTY = jaw ? [0.15, 0.10, 0.06, 0.02] : [0.35, 0.28, 0.20, 0.12];
+        const FTX = jaw ? -0.40 : -0.25, FTZ = jaw ? 0.78 : 0.90;
+        for (let i = 0; i < 4; i++) {
+            const dirF = new THREE.Vector3(FTX, FTY[i], sideZ * FTZ).normalize();
+            const tpF = C.clone().addScaledVector(dirF, R + 0.002);
+            h.c[i] = solveCurl(h, i, [tpF.x * 100, tpF.y * 100, tpF.z * 100]);
+        }
+        // 親指先を顎の前（片手は顎の下・前）へ解く（指と親指で挟む）
+        const dirT = jaw
+            ? new THREE.Vector3(-0.72, -0.72, sideZ * 0.18).normalize()
+            : new THREE.Vector3(-0.80, -0.40, sideZ * 0.28).normalize();
+        const tpT = C.clone().addScaledVector(dirT, R + 0.002);
+        h.t = solveThumbNat(h, [tpT.x * 100, tpT.y * 100, tpT.z * 100], Cc, Rc);
+
+        // 手首の位置へBの腕をIK（届かなければ手を到達点までずらす＝手が浮く）
+        const W = toW(h, ARM_START);
+        const Wm = new THREE.Vector3(W[0] / 100, W[1] / 100, W[2] / 100);
+        const armB = sideZ === 1 ? B.arms[0] : B.arms[1];
+        const S = localToWorld(B, armB.position.clone());
+        const { E, H } = solveTwoBone(S, Wm, armB.half, armB.half, new THREE.Vector3(-0.6, -1, sideZ * 0.6));
+        const gapM = H.distanceTo(Wm);
+        if (gapM > 0.01) {
+            place(h, ARM_START, [H.x * 100, H.y * 100, H.z * 100]);
+            floatGap = Math.max(floatGap, gapM * 100);
+        }
+        reachWorst = Math.max(reachWorst, S.distanceTo(Wm) / (armB.half * 2) * 100);
+        const Sl = armB.position.clone();
+        const El = worldToGroup(B, E), Hl = worldToGroup(B, H);
+        aimLimb(armB, El.clone().sub(Sl), Hl.sub(El));
+        cheekHands.push(h);
+
+        // 密着・めり込みの測定（頭の球 vs 手のカプセル群）
+        capsules(h, false).forEach(cp => {
+            const d = segPointDist(new THREE.Vector3(...cp.a), new THREE.Vector3(...cp.b), C3) - cp.r;
+            if (cp.tag === 'palm') palmGapMin = Math.min(palmGapMin, d - Rc);
+            worstPen = Math.max(worstPen, Rc - d);
+        });
+    });
+
+    // 使わない側のBの腕は自然に下ろす
+    B.arms.forEach((armB2, i) => {
+        const used = sides.includes(i === 0 ? 1 : -1);
+        if (used) return;
+        const s = i === 0 ? -1 : 1;
+        aimLimb(armB2, new THREE.Vector3(s * 0.10, -1, 0.02), new THREE.Vector3(s * 0.16, -1, 0.18));
+    });
+
+    // Aの腕は少し前気味に控えめに下ろす（もじもじ感）
+    A.arms.forEach((aArm, i) => {
+        const s = i === 0 ? -1 : 1;
+        aimLimb(aArm, new THREE.Vector3(s * 0.08, -1, 0.03), new THREE.Vector3(s * 0.04, -1, 0.25));
+    });
+
+    cheekMetrics = {
+        faceDistCm: faceDistCm,
+        reach: reachWorst,
+        palmGapCm: palmGapMin === 1e9 ? 0 : palmGapMin,
+        penCm: Math.max(0, worstPen),
+        floatGapCm: floatGap,
+        handCm: handCm
+    };
+}
+
+function cheekComment() {
+    const m = cheekMetrics;
+    if (!m) return '';
+    if (m.floatGapCm > 1) return `あと${m.floatGapCm.toFixed(0)}cm届いてない…手が浮いちゃってる。もう一歩近づきたいところ。`;
+    if (m.faceDistCm <= 9) return '顔まで指の幅ほど。近すぎて照れる距離感。';
+    if (m.faceDistCm <= 16) return 'ドキドキの近さ。ほっぺ、あったかい。';
+    return '優しく両手で包み込む、王道の距離感。';
+}
+
+// ===== ほっぺむにゅっ：Aの頭を手の接触部でわずかに凹ませ、そのまわりの肉をふくらませる =====
+function squishCheeks(A) {
+    if (!A || !cheekHands.length) return;
+    const head = A.headParts.children[0];
+    if (!head) return;
+    const R = A.userData.height * 0.13 * 0.8;           // 頭の半径 (m)
+    const hr = A.userData.headRot || [0, 0, 0];
+    A.headParts.rotation.set(hr[0], hr[1], hr[2]);       // animate と同じ頭の向きで計算
+    A.updateMatrixWorld(true);
+
+    // 変形を滑らかにするため、頭の球を細かい分割に差し替える
+    head.geometry.dispose();
+    head.geometry = new THREE.SphereGeometry(R, 56, 40);
+    const geo = head.geometry;
+    const pos = geo.attributes.position;
+    const orig = new Float32Array(pos.array);
+
+    // 手のカプセル（cm → m）
+    const caps = [];
+    cheekHands.forEach(h => capsules(h, false).forEach(cp => caps.push({
+        a: new THREE.Vector3(cp.a[0] * 0.01, cp.a[1] * 0.01, cp.a[2] * 0.01),
+        b: new THREE.Vector3(cp.b[0] * 0.01, cp.b[1] * 0.01, cp.b[2] * 0.01),
+        r: cp.r * 0.01
+    })));
+
+    const sm = (e0, e1, x) => { const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+    const DENT = R * 0.04;      // 手の下でへこむ量
+    const BULGE = R * 0.07;     // 手のまわりでふくらむ量（むにゅっ）
+    const v = new THREE.Vector3(), w = new THREE.Vector3(), dir = new THREE.Vector3();
+
+    for (let i = 0; i < pos.count; i++) {
+        v.set(orig[i * 3], orig[i * 3 + 1], orig[i * 3 + 2]);
+        dir.copy(v).normalize();
+        w.copy(v); head.localToWorld(w);
+        let dmin = 1e9;
+        for (let k = 0; k < caps.length; k++) {
+            const d = segPointDist(caps[k].a, caps[k].b, w) - caps[k].r;
+            if (d < dmin) dmin = d;
+        }
+        const inner = 1 - sm(0.003, 0.014, dmin);                              // 手が当たっている部分
+        const ring = sm(0.000, 0.006, dmin) * (1 - sm(0.006, 0.026, dmin));   // 手のまわりの盛り上がり
+        // ほっぺ周辺だけに限定：目の高さより上（こめかみ・頭）と後ろ側は変形させない
+        const cheekMask = (1 - sm(-0.10, 0.20, dir.y)) * sm(-0.05, 0.25, dir.z);
+        const disp = (-DENT * inner + BULGE * ring * (1 - inner)) * cheekMask;
+        pos.setXYZ(i, v.x + dir.x * disp, v.y + dir.y * disp, v.z + dir.z * disp);
+    }
+    pos.needsUpdate = true;
+
+    // 法線を再計算し、球の継ぎ目・極の重複頂点では法線をそろえて筋が出ないようにする
+    geo.computeVertexNormals();
+    const nor = geo.attributes.normal;
+    const groups = new Map();
+    for (let i = 0; i < pos.count; i++) {
+        const key = Math.round(orig[i * 3] * 1e5) + ',' + Math.round(orig[i * 3 + 1] * 1e5) + ',' + Math.round(orig[i * 3 + 2] * 1e5);
+        let g = groups.get(key); if (!g) { g = []; groups.set(key, g); }
+        g.push(i);
+    }
+    groups.forEach(g => {
+        if (g.length < 2) return;
+        let nx = 0, ny = 0, nz = 0;
+        g.forEach(i => { nx += nor.getX(i); ny += nor.getY(i); nz += nor.getZ(i); });
+        const l = Math.hypot(nx, ny, nz) || 1;
+        g.forEach(i => nor.setXYZ(i, nx / l, ny / l, nz / l));
+    });
+    nor.needsUpdate = true;
+    geo.computeBoundingSphere();
+}
+
+// 手モデルの見た目を（再）構築する。手の単位はcmなので 0.01 倍のレイヤーに入れる
+function updateHandVisuals() {
+    if (!handLayer) {
+        handLayer = new THREE.Group();
+        handLayer.scale.setScalar(0.01);
+        scene.add(handLayer);
+        handParent = handLayer;
+    }
+    if (!palmGeo) {
+        palmGeo = roundedPalmGeo(PALM.w, PALM.l, PALM.t, 1.0, 8);
+        cylGeo = new THREE.CylinderGeometry(1, 1, 1, 14, 1);
+        sphGeo = new THREE.SphereGeometry(1, 14, 10);
+        armGeo = new THREE.CylinderGeometry(0.93, 1, 1, 20, 1);
+    }
+    const colorB = document.getElementById('colorB').value;
+    if (handVis.length !== cheekHands.length) {
+        handVis.forEach(v => handLayer.remove(v.group));
+        handVis = cheekHands.map(() => buildVisual(colorB));
+    }
+    handVis.forEach((v, idx) => { v.mat.color.set(colorB); updateVisual(v, cheekHands[idx]); });
+}
+
+function updateScene() {
+    const hA = parseFloat(document.getElementById('heightA').value)||158;
+    const hB = parseFloat(document.getElementById('heightB').value)||171.5;
+    const gA = document.getElementById('genderA').value;
+    const gB = document.getElementById('genderB').value;
+    
+    if(personA) walkGroup.remove(personA);
+    if(personB) walkGroup.remove(personB);
+    
+    personA = createMannequin(document.getElementById('colorA').value, hA, gA, document.getElementById('nameA').value, 'A', {});
+    personB = createMannequin(document.getElementById('colorB').value, hB, gB, document.getElementById('nameB').value, 'B', {});
+    
+    const handMode = (document.querySelector('input[name="handMode"]:checked') || {}).value || 'both';
+    setupCheekCup(personA, personB, gB, handMode);
+
+    walkGroup.add(personA, personB);
+    squishCheeks(personA);
+    updateHandVisuals();
+    const nA = document.getElementById('nameA').value||'A';
+    const nB = document.getElementById('nameB').value||'B';
+
+    if(currentView !== '3rd') {
+        const myName = (currentView === 'A') ? nA : nB;
+        document.getElementById('view-label').innerText = `${myName} の視点`;
+        if(currentView === 'A') { personA.headParts.visible = false; personA.nameTag.visible = false; }
+        if(currentView === 'B') { personB.headParts.visible = false; personB.nameTag.visible = false; }
+    }
+
+    document.getElementById('info').innerHTML = `
+        <div class="info-row">
+            <span class="info-label">📏 身長差</span>
+            <span class="info-value">${Math.abs(hA-hB).toFixed(1)}<span class="unit">cm</span></span>
+        </div>
+        ${cheekMetrics ? `
+        <div class="info-row">
+            <span class="info-label">✋ Bの手の大きさ</span>
+            <span class="info-value">${cheekMetrics.handCm.toFixed(1)}<span class="unit">cm</span></span>
+        </div>` : ''}
+    `;
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    // ポーズで指定した頭の向き（setupCheekCup が userData.headRot に入れる）
+    const hrA = personA.userData.headRot || [0, 0, 0];
+    const hrB = personB.userData.headRot || [0, 0, 0];
+    personA.headParts.rotation.set(hrA[0], hrA[1], hrA[2]);
+    personB.headParts.rotation.set(hrB[0], hrB[1], hrB[2]);
+
+    // 三人称視点の中心点：ふたりの顔（頭）の位置の中点
+    const faceA = new THREE.Vector3(), faceB = new THREE.Vector3();
+    personA.headParts.getWorldPosition(faceA);
+    personB.headParts.getWorldPosition(faceB);
+    const centerPos = faceA.clone().add(faceB).multiplyScalar(0.5);
+
+    if (currentView === '3rd') {
+        camera.up.set(0, 1, 0);
+        camera.position.set(
+            centerPos.x + Math.sin(rotation.y) * camDist,
+            centerPos.y + Math.sin(rotation.x) * camDist,
+            centerPos.z + Math.cos(rotation.y) * camDist
+        );
+        camera.lookAt(centerPos);
+    } else {
+        // 一人称：カメラを目の位置に置き、相手の目をまっすぐ見る（＝実際の目線方向）
+        // カメラの「上」は頭の上方向を使うので、首かしげの傾きもそのまま映る
+        const self = (currentView === 'A' ? personA : personB);
+        const other = (currentView === 'A' ? personB : personA);
+        const q = new THREE.Quaternion();
+        self.headParts.getWorldQuaternion(q);
+        const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+        self.headParts.getWorldPosition(camera.position);
+        camera.position.addScaledVector(fwd, 0.09); // 目の位置（顔の前面寄り）へ
+        camera.up.copy(new THREE.Vector3(0, 1, 0).applyQuaternion(q));
+        const eyeTarget = new THREE.Vector3();
+        other.headParts.getWorldPosition(eyeTarget);
+        camera.lookAt(eyeTarget);
+
+        // ドラッグで見回し
+        camera.rotateY(rotation.y);
+        camera.rotateX(rotation.x);
+    }
+    renderer.render(scene, camera);
+}
+
+function setupControls() {
+    const c = document.getElementById('canvas-container');
+    const move = (dx, dy) => { rotation.y -= dx * 0.005; rotation.x -= dy * 0.005; };
+    c.addEventListener('mousedown', () => isDragging = true);
+    window.addEventListener('mouseup', () => isDragging = false);
+    window.addEventListener('mousemove', e => { if(isDragging) move(e.movementX, e.movementY); });
+
+    c.addEventListener('wheel', e => {
+        if (currentView === '3rd') {
+            camDist += e.deltaY * 0.002;
+            camDist = Math.max(0.5, Math.min(10, camDist));
+        }
+    }, { passive: true });
+
+    c.addEventListener('touchstart', e => { 
+        if (e.touches.length === 1) {
+            isDragging = true; 
+            previousTouch = e.touches[0]; 
+            initialPinchDist = null;
+        } else if (e.touches.length === 2 && currentView === '3rd') {
+            isDragging = false;
+            initialPinchDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+        }
+    }, { passive: false });
+
+    window.addEventListener('touchend', () => { 
+        isDragging = false; 
+        initialPinchDist = null;
+    });
+
+    window.addEventListener('touchmove', e => {
+        if (e.touches.length === 1 && isDragging && previousTouch) {
+            if (e.cancelable) e.preventDefault();
+            const touch = e.touches[0];
+            move(touch.clientX - previousTouch.clientX, touch.clientY - previousTouch.clientY);
+            previousTouch = touch;
+        } else if (e.touches.length === 2 && initialPinchDist !== null && currentView === '3rd') {
+            if (e.cancelable) e.preventDefault();
+            const currentDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            const diff = currentDist - initialPinchDist;
+            camDist -= diff * 0.005;
+            camDist = Math.max(0.5, Math.min(10, camDist));
+            initialPinchDist = currentDist;
+        }
+    }, { passive: false });
+}
+
+function switchView() {
+    const order = ['3rd', 'A', 'B'];
+    currentView = order[(order.indexOf(currentView) + 1) % 3];
+    const nA = document.getElementById('nameA').value||'A';
+    const nB = document.getElementById('nameB').value||'B';
+    
+    if (currentView === '3rd') {
+        document.getElementById('view-label').innerText = '三人称視点';
+    } else {
+        const myName = (currentView === 'A') ? nA : nB;
+        document.getElementById('view-label').innerText = `${myName} の視点`;
+    }
+
+    document.getElementById('crosshair').style.display = currentView === '3rd' ? 'none' : 'block';
+    personA.headParts.visible = true; personA.nameTag.visible = true;
+    personB.headParts.visible = true; personB.nameTag.visible = true;
+    if (currentView === 'A') { personA.headParts.visible = false; personA.nameTag.visible = false; }
+    else if (currentView === 'B') { personB.headParts.visible = false; personB.nameTag.visible = false; }
+    if (currentView === '3rd') { rotation.x = DEFAULT_ROT_3RD.x; rotation.y = DEFAULT_ROT_3RD.y; }
+    else { rotation.x = 0; rotation.y = 0; }
+}
+
+function shareToX() {
+    const nA = document.getElementById('nameA').value || 'A';
+    const nB = document.getElementById('nameB').value || 'B';
+    const hA = parseFloat(document.getElementById('heightA').value) || 158.0;
+    const hB = parseFloat(document.getElementById('heightB').value) || 171.5;
+    const text = `${nB}(${hB.toFixed(1)}cm)が${nA}(${hA.toFixed(1)}cm)のほっぺを包み込む！\n#ほっぺ包みシミュレーター\n`;
+    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(window.location.href)}`, '_blank');
+}
+
+init();
+</script>
+</body>
+</html>
